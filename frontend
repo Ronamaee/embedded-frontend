@@ -1,0 +1,121 @@
+import processing.serial.*;
+import processing.video.*;
+
+Serial myPort;
+Capture cam;
+
+String serialData = "";
+boolean autoMode = true;
+PImage bgImage;
+
+void setup() {
+  size(1280, 720); 
+  textAlign(CENTER, CENTER);
+  textSize(16);
+
+  
+  bgImage = loadImage("rona.jpg"); 
+  // Serial Port Setup
+  println("Available serial ports:");
+  printArray(Serial.list());
+
+  if (Serial.list().length == 0) {
+    println("No serial ports found. Connect your Arduino and restart.");
+    exit();
+  }
+  myPort = new Serial(this, Serial.list()[0], 9600);
+  myPort.clear();
+
+  // Webcam Setup
+  String[] cameras = Capture.list();
+  if (cameras.length == 0) {
+    println("No cameras found.");
+  } else {
+    println("Using camera: " + cameras[0]);
+    cam = new Capture(this, cameras[0]);
+    cam.start();
+  }
+}
+
+void draw() {
+  // Draw background image
+  if (bgImage != null) {
+    background(bgImage);
+  } else {
+    background(40); // Fallback
+  }
+
+  fill(255);
+  textSize(28);
+  text("Narrow Curve Road Warning Signal", width/2, 40);
+
+  textSize(20);
+  text("Current Mode: " + (autoMode ? "AUTO" : "MANUAL"), width/2, 90);
+
+  drawSwitch("Switch to " + (autoMode ? "MANUAL" : "AUTO"), width/2 - 100, 130, 200, 40);
+
+  if (!autoMode) {
+    drawButton("Left Road", 400, 250, 200, 60);
+    drawButton("Right Road", 700, 250, 200, 60);
+  } else {
+    fill(0);
+    rect(400, 250, 200, 60, 10);
+    rect(700, 250, 200, 60, 10);
+    fill(150);
+    text("Left Road", 500, 280);
+    text("Right Road", 800, 280);
+  }
+
+  // Serial feedback
+  fill(0, 0, 0);
+  textSize(20);
+  text(serialData, width/2, 360);
+
+ 
+  if (cam != null && cam.available()) {
+    cam.read();
+    image(cam, width - 330, height - 240, 320, 240); // Bigger cam view
+    fill(255);
+    text("Live Camera", width - 170, height - 260);
+  }
+}
+
+void drawButton(String label, float x, float y, float w, float h) {
+  fill(100);
+  rect(x, y, w, h, 10);
+  fill(255);
+  text(label, x + w/2, y + h/2);
+}
+
+void drawSwitch(String label, float x, float y, float w, float h) {
+  fill(autoMode ? color(50, 150, 255) : color(255, 120, 50));
+  rect(x, y, w, h, 10);
+  fill(255);
+  text(label, x + w/2, y + h/2);
+}
+
+void mousePressed() {
+  if (overButton(width/2 - 100, 130, 200, 40)) {
+    autoMode = !autoMode;
+    myPort.write(autoMode ? "auto\n" : "manual\n");
+  }
+
+  if (!autoMode) {
+    if (overButton(400, 250, 200, 60)) {
+      myPort.write("servo1\n");
+    } else if (overButton(700, 250, 200, 60)) {
+      myPort.write("servo2\n");
+    }
+  }
+}
+
+boolean overButton(float x, float y, float w, float h) {
+  return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+}
+
+void serialEvent(Serial p) {
+  String input = p.readStringUntil('\n');
+  if (input != null) {
+    serialData = input.trim();
+  }
+}
