@@ -1,0 +1,179 @@
+import processing.serial.*;
+import processing.video.*;
+
+Serial myPort;
+Capture cam1, cam2;
+String serialData = "";
+boolean autoMode = true;
+boolean showLeftCam = false;
+boolean showRightCam = false;
+PImage bgImage;
+
+int manualActiveDuration = 5000;  // 5 seconds in milliseconds
+int manualLeftActivatedAt = 0;
+int manualRightActivatedAt = 0;
+
+void setup() {
+  size(1280, 720); 
+  textAlign(CENTER, CENTER);
+  textSize(16);
+
+  bgImage = loadImage("rona.jpg"); 
+  println("Available serial ports:");
+  printArray(Serial.list());
+
+  if (Serial.list().length == 0) {
+    println("No serial ports found. Connect your Arduino and restart.");
+    exit();
+  }
+  myPort = new Serial(this, Serial.list()[2], 9600);
+  myPort.clear();
+
+  String[] cameras = Capture.list();
+  if (cameras.length < 2) {
+    println("At least 2 cameras required.");
+  } else {
+    println("Using cameras: " + cameras[0] + " and " + cameras[1]);
+    cam1 = new Capture(this, cameras[0]);
+    cam2 = new Capture(this, cameras[1]);
+    cam1.start();
+    cam2.start();
+  }
+}
+
+void draw() {
+  if (bgImage != null) {
+    background(bgImage);
+  } else {
+    background(40);
+  }
+
+  fill(255);
+  textSize(28);
+  text("Narrow Curve Road Warning Signal", width/2, 40);
+
+  textSize(20);
+  text("Current Mode: " + (autoMode ? "AUTO" : "MANUAL"), width/2, 90);
+
+  drawSwitch("Switch to " + (autoMode ? "MANUAL" : "AUTO"), width/2 - 100, 130, 200, 40);
+
+  if (!autoMode) {
+    drawButton("Left Road", 400, 250, 200, 60);
+    drawButton("Right Road", 700, 250, 200, 60);
+  } else {
+    fill(0);
+    rect(400, 250, 200, 60, 10);
+    rect(700, 250, 200, 60, 10);
+    fill(150);
+    text("Left Road", 500, 280);
+    text("Right Road", 800, 280);
+  }
+
+  fill(0);
+  textSize(20);
+  text(serialData, width/2, 360);
+
+  if (cam1 != null && cam1.available()) cam1.read();
+  if (cam2 != null && cam2.available()) cam2.read();
+
+  // Camera layout
+  float camWidth = 320;
+  float camHeight = 240;
+  float camSpacing = 20;
+  float totalWidth = camWidth * 2 + camSpacing;
+  float startX = (width - totalWidth) / 2;
+  float camY = height - camHeight - 20;
+
+  // Manage manual mode visual delay:
+  if (!autoMode) {
+    // Check if 5 seconds passed since last manual activation
+    if (millis() - manualLeftActivatedAt > manualActiveDuration) {
+      showLeftCam = false;
+    }
+    if (millis() - manualRightActivatedAt > manualActiveDuration) {
+      showRightCam = false;
+    }
+  }
+
+  // Camera 1 (left)
+  if (cam1 != null) {
+    image(cam1, startX, camY, camWidth, camHeight);
+    if ((autoMode && showLeftCam) || (!autoMode && showLeftCam)) {
+      noFill();
+      stroke(0, 255, 0);
+      strokeWeight(4);
+      rect(startX, camY, camWidth, camHeight);
+    }
+  }
+
+  // Camera 2 (right)
+  if (cam2 != null) {
+    image(cam2, startX + camWidth + camSpacing, camY, camWidth, camHeight);
+    if ((autoMode && showRightCam) || (!autoMode && showRightCam)) {
+      noFill();
+      stroke(0, 255, 0);
+      strokeWeight(4);
+      rect(startX + camWidth + camSpacing, camY, camWidth, camHeight);
+    }
+  }
+
+  noStroke();
+  fill(255);
+  textSize(14);
+  text("Left Camera", startX + camWidth / 2, camY - 20);
+  text("Right Camera", startX + camWidth + camSpacing + camWidth / 2, camY - 20);
+}
+
+void drawButton(String label, float x, float y, float w, float h) {
+  fill(100);
+  rect(x, y, w, h, 10);
+  fill(255);
+  text(label, x + w/2, y + h/2);
+}
+
+void drawSwitch(String label, float x, float y, float w, float h) {
+  fill(autoMode ? color(50, 150, 255) : color(255, 120, 50));
+  rect(x, y, w, h, 10);
+  fill(255);
+  text(label, x + w/2, y + h/2);
+}
+
+void mousePressed() {
+  if (overButton(width/2 - 100, 130, 200, 40)) {
+    autoMode = !autoMode;
+    myPort.write(autoMode ? "auto\n" : "manual\n");
+  }
+
+  if (!autoMode) {
+    if (overButton(400, 250, 200, 60)) {
+      myPort.write("servo1\n");  // Send immediately
+      showLeftCam = true;       // Show left cam active
+      manualLeftActivatedAt = millis(); // Start timer for 5s
+    } else if (overButton(700, 250, 200, 60)) {
+      myPort.write("servo2\n");  // Send immediately
+      showRightCam = true;       // Show right cam active
+      manualRightActivatedAt = millis(); // Start timer for 5s
+    }
+  }
+}
+
+boolean overButton(float x, float y, float w, float h) {
+  return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+}
+
+void serialEvent(Serial p) {
+  String input = p.readStringUntil('\n');
+  if (input != null) {
+    serialData = input.trim();
+
+    if (autoMode) {
+      if (serialData.equals("left")) {
+        showLeftCam = true;
+        showRightCam = false;
+      } else if (serialData.equals("right")) {
+        showRightCam = true;
+        showLeftCam = false;
+      }
+    }
+  }
+}
